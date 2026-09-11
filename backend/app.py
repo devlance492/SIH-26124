@@ -7,8 +7,11 @@ import models
 import schemas
 from database import engine, get_db
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
+# Create database tables safely
+try:
+    models.Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Database table creation deferred or failed: {e}")
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,7 +19,7 @@ app = FastAPI(title="SIH26124 Observation API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

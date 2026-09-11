@@ -1,0 +1,5 @@
+# Dependencies for Edge Clients with Local YOLO GPU/CPU Inference
+-r requirements.txt
+ultralytics
+opencv-python
+numpy
