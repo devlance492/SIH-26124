@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { Observation, InferResponse, FleetBusStatus, GeoJSONFeature } from './types';
 
-const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const API_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : 'http://127.0.0.1:8000');
 
 export { type Observation };
 
@@ -125,10 +125,13 @@ export const clearSession = async (sessionId: string) => {
   return response.data;
 };
 
-// ── WebSocket URL ────────────────────────────────────────────────────────────
-
 export const getWebSocketUrl = (): string => {
-  const base = API_URL.replace(/^http/, 'ws');
-  return `${base}/ws/events`;
+  if (API_URL.startsWith('http://') || API_URL.startsWith('https://')) {
+    return `${API_URL.replace(/^http/, 'ws')}/ws/events`;
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  const prefix = API_URL.startsWith('/') ? API_URL : `/${API_URL}`;
+  return `${protocol}//${host}${prefix}/ws/events`;
 };
 

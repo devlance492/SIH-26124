@@ -1,10 +1,14 @@
 import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+import json
+
 import models
 import schemas
+import event_fusion
 from database import engine, get_db
 
 # Create database tables safely
@@ -12,8 +16,6 @@ try:
     models.Base.metadata.create_all(bind=engine)
 except Exception as e:
     print(f"Warning: Database table creation deferred or failed: {e}")
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="SIH26124 Observation API", version="1.0.0")
 
@@ -24,8 +26,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-from fastapi import WebSocket, WebSocketDisconnect
-import json
 
 class ConnectionManager:
     def __init__(self):
@@ -51,13 +51,23 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-@app.get("/health", status_code=status.HTTP_200_OK)
+router = APIRouter()
+
+@router.get("/", status_code=status.HTTP_200_OK)
+@app.get("/", status_code=status.HTTP_200_OK)
+def root():
+    return {
+        "status": "ok",
+        "service": "SIH26124 API",
+        "version": "1.0.0",
+        "endpoints": ["/health", "/events", "/events/geojson", "/observations", "/fleet/status", "/infer"]
+    }
+
+@router.get("/health", status_code=status.HTTP_200_OK)
 def health_check():
     return {"status": "ok"}
 
-import event_fusion
-
-@app.post("/observations", response_model=schemas.ObservationFusionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/observations", response_model=schemas.ObservationFusionResponse, status_code=status.HTTP_201_CREATED)
 async def create_observation(obs: schemas.ObservationCreate, db: Session = Depends(get_db)):
     obs_data = obs.model_dump()
     if obs_data.get('timestamp') is None:
@@ -90,7 +100,7 @@ async def create_observation(obs: schemas.ObservationCreate, db: Session = Depen
         event_created=event_created
     )
 
-@app.get("/observations", response_model=List[schemas.ObservationResponse])
+@router.get("/observations", response_model=List[schemas.ObservationResponse])
 def get_observations(
     bus_id: Optional[str] = Query(None, description="Filter by Bus ID"),
     class_name: Optional[str] = Query(None, description="Filter by Object Class Name"),
@@ -111,14 +121,14 @@ def get_observations(
     observations = query.offset(skip).limit(limit).all()
     return observations
 
-@app.get("/observations/{observation_id}", response_model=schemas.ObservationResponse)
+@router.get("/observations/{observation_id}", response_model=schemas.ObservationResponse)
 def get_observation(observation_id: int, db: Session = Depends(get_db)):
     obs = db.query(models.Observation).filter(models.Observation.observation_id == observation_id).first()
     if not obs:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Observation not found")
     return obs
 
-@app.get("/events", response_model=List[schemas.EventResponse])
+@router.get("/events", response_model=List[schemas.EventResponse])
 def get_events(
     event_type: Optional[str] = Query(None, description="Filter by Event Type"),
     status: Optional[str] = Query(None, description="Filter by Status"),
@@ -134,7 +144,7 @@ def get_events(
     
     return query.offset(skip).limit(limit).all()
 
-@app.get("/events/geojson")
+@router.get("/events/geojson")
 def get_events_geojson(
     event_type: Optional[str] = Query(None, description="Filter by Event Type"),
     status: Optional[str] = Query(None, description="Filter by Status"),
@@ -175,14 +185,14 @@ def get_events_geojson(
         "features": features
     }
 
-@app.get("/events/{event_id}", response_model=schemas.EventResponse)
+@router.get("/events/{event_id}", response_model=schemas.EventResponse)
 def get_event_by_id(event_id: int, db: Session = Depends(get_db)):
     evt = db.query(models.Event).filter(models.Event.event_id == event_id).first()
     if not evt:
         raise HTTPException(status_code=404, detail="Event not found")
     return evt
 
-@app.get("/events/{event_id}/observations", response_model=List[schemas.ObservationResponse])
+@router.get("/events/{event_id}/observations", response_model=List[schemas.ObservationResponse])
 def get_event_observations(event_id: int, db: Session = Depends(get_db)):
     observations = db.query(models.Observation).filter(models.Observation.event_id == event_id).all()
     return observations
@@ -191,7 +201,7 @@ def get_event_observations(event_id: int, db: Session = Depends(get_db)):
 # SESSIONS & DEMO LIFECYCLE
 # ==============================================================================
 
-@app.post("/sessions/{session_id}/clear")
+@router.post("/sessions/{session_id}/clear")
 async def clear_session(session_id: str, db: Session = Depends(get_db)):
     """
     Safely clears observations and recalculates/removes affected events for a given session.
@@ -245,6 +255,7 @@ async def clear_session(session_id: str, db: Session = Depends(get_db)):
 # ==============================================================================
 
 @app.websocket("/ws/events")
+@app.websocket("/api/ws/events")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
@@ -258,7 +269,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # TELEMETRY & FLEET (DEMO & EDGE)
 # ==============================================================================
 
-@app.post("/telemetry", status_code=status.HTTP_201_CREATED)
+@router.post("/telemetry", status_code=status.HTTP_201_CREATED)
 async def create_telemetry(telemetry: schemas.TelemetryCreate, db: Session = Depends(get_db)):
     data = telemetry.model_dump()
     if data.get('timestamp') is None:
@@ -280,10 +291,8 @@ async def create_telemetry(telemetry: schemas.TelemetryCreate, db: Session = Dep
     
     return {"status": "ok"}
 
-@app.get("/fleet/status", response_model=List[schemas.FleetBusStatus])
+@router.get("/fleet/status", response_model=List[schemas.FleetBusStatus])
 def get_fleet_status(db: Session = Depends(get_db)):
-    # Very basic approach: get the latest telemetry for each bus
-    # In production, this would be a more complex query or cache.
     buses = db.query(models.Telemetry.bus_id).distinct().all()
     status_list = []
     
@@ -307,10 +316,9 @@ def get_fleet_status(db: Session = Depends(get_db)):
 # ==============================================================================
 # LIVE DEMO INFERENCE API (BROWSER MODE ONLY)
 # ==============================================================================
-import asyncio
 from inference_service import inference_service
 
-@app.post("/infer", response_model=schemas.InferResponse)
+@router.post("/infer", response_model=schemas.InferResponse)
 async def infer_frame(req: schemas.InferRequest, db: Session = Depends(get_db)):
     # 1. Run inference
     detections = inference_service.infer_base64(req.frame_base64)
@@ -390,3 +398,6 @@ async def infer_frame(req: schemas.InferRequest, db: Session = Depends(get_db)):
         fused_events=list(fused_events)
     )
 
+# Register routes for both direct paths and /api prefix
+app.include_router(router)
+app.include_router(router, prefix="/api")
