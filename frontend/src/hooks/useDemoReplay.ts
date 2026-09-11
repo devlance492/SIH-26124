@@ -150,7 +150,7 @@ export function useDemoReplay() {
     const vid = videoRef.current;
     if (!vid) return;
 
-    if ('requestVideoFrameCallback' in vid) {
+    if (typeof (vid as any).requestVideoFrameCallback === 'function') {
       rvfcHandleRef.current = (vid as any).requestVideoFrameCallback(() => {
         syncFrame(vid);
         if (!vid.paused && !vid.ended) {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchEventGeoJSON, fetchFleetStatus } from '../services/api';
 import { useCamera } from '../hooks/useCamera';
-import { useVideoFile } from '../hooks/useVideoFile';
 import { useDemoReplay } from '../hooks/useDemoReplay';
 import { useGps } from '../hooks/useGps';
 import { useInference } from '../hooks/useInference';
@@ -28,7 +27,6 @@ export const Dashboard: React.FC = () => {
   const [videoFileObj, setVideoFileObj] = useState<File | null>(null);
 
   const camera = useCamera();
-  const rawVideo = useVideoFile();
   const demoReplay = useDemoReplay();
   const gpsInfo = useGps();
   const inference = useInference();
@@ -67,7 +65,7 @@ export const Dashboard: React.FC = () => {
     }
   }, [loadData]);
 
-  const { connected: wsConnected } = useWebSocket(handleWsMessage);
+  useWebSocket(handleWsMessage);
 
   // Select Camera
   const handleSelectCamera = async () => {

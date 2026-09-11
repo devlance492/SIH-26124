@@ -23,7 +23,6 @@ export function useInference() {
   const runningRef = useRef(false);
   const fpsCounterRef = useRef({ frames: 0, lastTime: Date.now() });
   const statsRef = useRef(stats);
-  const queueRef = useRef<Array<{ frame: string; busId: string; gps: GpsState }>>([]);
 
   // Process a single frame
   const processFrame = useCallback(

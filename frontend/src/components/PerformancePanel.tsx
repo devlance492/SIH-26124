@@ -10,7 +10,6 @@ interface PerformancePanelProps {
 
 export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   mode,
-  fps,
   replayFps,
   observationsSent,
   totalFrames,

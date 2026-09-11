@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import type { Detection, GpsState } from '../services/types';
 
 const MODEL1_COLORS: Record<string, string> = {
